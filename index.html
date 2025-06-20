@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll-Triggered Audio (BoundingClientRect)</title>
+  <title>Scroll-Triggered Audio (Web Audio GainNodes)</title>
   <style>
     html, body { margin:0; padding:0; }
     #startStop {
@@ -31,58 +31,59 @@
   <section data-track="kids">Kids Playing</section>
 
   <script>
-    const btn     = document.getElementById('startStop');
-    const audios  = {};   // { el:HTMLAudioElement, started:boolean }
-    const secs    = {};   // 各セクション要素
+    let audioCtx, tracks;
 
-    // 要素をキャッシュ
-    ['rain','piano','kids'].forEach(id => {
-      audios[id] = { el: document.getElementById(id), started: false };
-      secs[id]   = document.querySelector(`section[data-track="${id}"]`);
-    });
+    document.getElementById('startStop')
+      .addEventListener('click', async function() {
+      const btn = this;
+      if (!audioCtx) {
+        btn.textContent = 'Loading…';
 
-    function isFullyVisible(el) {
-      const r = el.getBoundingClientRect();
-      return r.top >= 0 && r.bottom <= window.innerHeight;
-    }
+        // 1) Unlock/resume AudioContext
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        await audioCtx.resume();
 
-    function onScroll() {
-      Object.keys(secs).forEach(id => {
-        const a = audios[id];
-        if (!a.started && isFullyVisible(secs[id])) {
-          a.el.muted   = false;
-          a.started    = true;
-        }
-      });
-    }
-
-    btn.addEventListener('click', () => {
-      if (btn.dataset.running) {
-        // ■ Stop & reset
-        window.removeEventListener('scroll', onScroll);
-        Object.values(audios).forEach(a => {
-          a.el.pause();
-          a.el.currentTime = 0;
-          a.el.muted       = true;
-          a.started        = false;
+        // 2) Wire each <audio> through a GainNode (initial gain=0)
+        tracks = {};
+        document.querySelectorAll('audio').forEach(el => {
+          const src  = audioCtx.createMediaElementSource(el);
+          const gain = audioCtx.createGain();
+          gain.gain.value = 0;
+          src.connect(gain).connect(audioCtx.destination);
+          tracks[el.id] = { gain, started: false };
+          el.play();  // unlock playback
         });
-        btn.textContent = 'Start Audio';
-        delete btn.dataset.running;
+
+        btn.textContent = 'Stop Audio';
+
+        // 3) Observe all sections; only fire when fully in view
+        const observer = new IntersectionObserver(entries => {
+          entries.forEach(entry => {
+            if (entry.intersectionRatio === 1) {
+              const id = entry.target.dataset.track;
+              const t  = tracks[id];
+              if (!t.started) {
+                // Fade to 0.5 over 0.1s
+                t.gain.gain.setTargetAtTime(0.5, audioCtx.currentTime, 0.1);
+                t.started = true;
+              }
+            }
+          });
+        }, { threshold: 1.0 });
+
+        document.querySelectorAll('section')
+                .forEach(sec => observer.observe(sec));
+
       } else {
-        // ■ Start
-        btn.dataset.running = 'true';
-        btn.textContent     = 'Stop Audio';
-
-        // 再生をタップ内で一度だけアンロック＋完全ミュート
-        Object.values(audios).forEach(a => {
-          a.el.muted = true;
-          a.el.play().catch(()=>{});
+        // Stop & reset
+        Object.values(tracks).forEach(t => {
+          // No need to stop el; it will end when you close context
+          t.gain.gain.value = 0;
+          t.started = false;
         });
-
-        // スクロールでそれぞれのセクションを判定
-        window.addEventListener('scroll', onScroll, { passive: true });
-        // 初期スクロール判定（ページ読込直後にセクション１が見えている場合）
-        onScroll();
+        await audioCtx.close();
+        audioCtx = null;
+        btn.textContent = 'Start Audio';
       }
     });
   </script>
