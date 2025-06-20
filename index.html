@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll-Triggered Audio (Fully In-View)</title>
+  <title>Scroll-Triggered Audio (Scroll-Position)</title>
   <style>
     html, body { margin:0; padding:0; }
     #startStop {
@@ -22,7 +22,6 @@
 <body>
   <button id="startStop">Start Audio</button>
 
-  <!-- Make sure these MP3s live next to your HTML on GH Pages -->
   <audio id="rain"  src="rain.mp3"          preload="auto" loop></audio>
   <audio id="piano" src="piano.mp3"         preload="auto" loop></audio>
   <audio id="kids"  src="kids_playing.mp3"  preload="auto" loop></audio>
@@ -33,50 +32,59 @@
 
   <script>
     const btn     = document.getElementById('startStop');
-    const audios  = {};   // will hold { el: HTMLAudioElement, started: boolean }
+    const audios  = {};        // will hold { el, started }
+    let   baseH   = 0;
+
+    function onScroll() {
+      const y = window.scrollY;
+      // Section 1: any scroll > 0
+      if (!audios.rain.started && y > 0) {
+        audios.rain.el.volume = 0.5;
+        audios.rain.started = true;
+      }
+      // Section 2: y >= baseH * 1
+      if (!audios.piano.started && y >= baseH * 1) {
+        audios.piano.el.volume = 0.5;
+        audios.piano.started = true;
+      }
+      // Section 3: y >= baseH * 2
+      if (!audios.kids.started && y >= baseH * 2) {
+        audios.kids.el.volume = 0.5;
+        audios.kids.started = true;
+      }
+    }
 
     btn.addEventListener('click', () => {
       if (btn.dataset.running) {
-        // ■ Stop
+        // Stop & reset
+        window.removeEventListener('scroll', onScroll);
         Object.values(audios).forEach(a => {
           a.el.pause();
           a.el.currentTime = 0;
+          a.el.volume = 0;
+          a.started = false;
         });
         btn.textContent = 'Start Audio';
-        btn.removeAttribute('data-running');
-        return;
-      }
+        delete btn.dataset.running;
+      } else {
+        // Start
+        btn.dataset.running = 'true';
+        btn.textContent = 'Stop Audio';
 
-      // ■ Start
-      btn.textContent = 'Stop Audio';
-      btn.dataset.running = 'true';
+        // Capture viewport height once
+        baseH = window.innerHeight;
 
-      // 1) Preplay & mute all audios
-      document.querySelectorAll('audio').forEach(el => {
-        el.volume = 0;
-        el.play().catch(()=>{/* swallow autoplay rejections */});
-        audios[el.id] = { el, started: false };
-      });
-
-      // 2) One IntersectionObserver for all sections
-      const observer = new IntersectionObserver(entries => {
-        entries.forEach(entry => {
-          // Only when fully in view
-          if (entry.intersectionRatio === 1) {
-            const id = entry.target.dataset.track;
-            const a  = audios[id];
-            if (a && !a.started) {
-              a.el.volume   = 0.5;   // bump volume instantly
-              a.started     = true;
-            }
-          }
+        // Play & mute all layers
+        ['rain','piano','kids'].forEach(id => {
+          const el = document.getElementById(id);
+          el.volume = 0;
+          el.play().catch(()=>{}); // unlock on mobile
+          audios[id] = { el, started: false };
         });
-      }, { threshold: 1.0 });
 
-      // Observe every section
-      document.querySelectorAll('section').forEach(sec => {
-        observer.observe(sec);
-      });
+        // Listen for scroll
+        window.addEventListener('scroll', onScroll, { passive: true });
+      }
     });
   </script>
 </body>
