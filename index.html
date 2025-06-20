@@ -2,71 +2,72 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Canvas＋背景動画＋タップで音声デモ</title>
+  <title>Video Background + Audio Button Demo</title>
   <style>
-    html, body { margin:0; padding:0; overflow-x:hidden; }
-    body { height:300vh; }              /* 3画面分のスクロール領域 */
-    /* Canvas を固定表示＆イベント透過 */
-    canvas#bg {
-      position: fixed;
-      top: 0; left: 0;
-      width: 100vw; height: 100vh;
-      z-index: -1;
-      pointer-events: none;             /* ← ここが重要 */
+    html, body { margin:0; padding:0; }
+    section {
+      position: relative;
+      width:100%; height:100vh;
+      overflow:hidden;
+      display:flex; flex-direction:column;
+      justify-content:center; align-items:center;
+      color:white; font-size:2rem;
     }
-    #hint {
-      position: fixed;
-      top: 10px; left: 10px;
-      background: rgba(0,0,0,0.5);
-      color: white; padding: 6px 12px;
-      border-radius: 4px; font-size: 14px;
-      z-index: 10;
-      pointer-events: none;             /* ヒントもタップを邪魔しない */
+    /* 背景動画 */
+    section video.bg {
+      position:absolute; top:50%; left:50%;
+      min-width:100%; min-height:100%;
+      width:auto; height:auto;
+      transform:translate(-50%,-50%);
+      object-fit:cover; z-index:-1;
+    }
+    /* セクション内コンテンツ */
+    .content {
+      z-index:1;
+      text-shadow:0 0 8px rgba(0,0,0,0.7);
+      margin-bottom:1em;
+    }
+    /* 再生ボタン */
+    button.play {
+      z-index:1;
+      padding:0.5em 1em;
+      font-size:1rem;
+      cursor:pointer;
     }
   </style>
 </head>
 <body>
-  <div id="hint">画面どこでもタップ → 雨／ピアノ／子供 を切り替え</div>
-  <canvas id="bg"></canvas>
-
-  <!-- 背景動画は DOM で用意（非表示でもＯＫ） -->
-  <video id="vRain"  muted loop playsinline src="rain.mp4"  style="display:none"></video>
-  <video id="vPiano" muted loop playsinline src="piano.mp4" style="display:none"></video>
-  <video id="vKids"  muted loop playsinline src="kids.mp4"  style="display:none"></video>
-
   <!-- Howler.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+
+  <!-- セクション1：雨 -->
+  <section data-id="rain">
+    <video class="bg" autoplay muted loop playsinline>
+      <source src="rain.mp4" type="video/mp4">
+    </video>
+    <div class="content">雨の風景</div>
+    <button class="play" data-id="rain">Play Rain</button>
+  </section>
+
+  <!-- セクション2：ピアノ -->
+  <section data-id="piano">
+    <video class="bg" autoplay muted loop playsinline>
+      <source src="piano.mp4" type="video/mp4">
+    </video>
+    <div class="content">ピアノ演奏</div>
+    <button class="play" data-id="piano">Play Piano</button>
+  </section>
+
+  <!-- セクション3：子供たち -->
+  <section data-id="kids">
+    <video class="bg" autoplay muted loop playsinline>
+      <source src="kids.mp4" type="video/mp4">
+    </video>
+    <div class="content">子供たちの遊び</div>
+    <button class="play" data-id="kids">Play Kids</button>
+  </section>
+
   <script>
-  (function() {
-    // Canvas 準備
-    const canvas = document.getElementById('bg');
-    const ctx    = canvas.getContext('2d');
-    function resize() {
-      canvas.width  = window.innerWidth;
-      canvas.height = window.innerHeight;
-    }
-    window.addEventListener('resize', resize);
-    resize();
-
-    // 背景動画要素を取得＆自動再生
-    const videos = [
-      document.getElementById('vRain'),
-      document.getElementById('vPiano'),
-      document.getElementById('vKids')
-    ];
-    videos.forEach(v => v.play().catch(()=>{}));
-
-    // 背景の描画ループ
-    function draw() {
-      const W = canvas.width, H = canvas.height;
-      ctx.clearRect(0, 0, W, H*3);
-      videos.forEach((v, i) => {
-        ctx.drawImage(v, 0, i*H, W, H);
-      });
-      requestAnimationFrame(draw);
-    }
-    draw();
-
     // Howler.js で音声トラックを定義
     const tracks = {
       rain:  new Howl({ src:['rain.mp3'],         loop:true, volume:0.7, html5:true }),
@@ -74,23 +75,21 @@
       kids:  new Howl({ src:['kids_playing.mp3'], loop:true, volume:0.7, html5:true })
     };
 
-    // タップ検知は document 全体で
-    document.addEventListener('pointerdown', e => {
-      // ここで一度に全 track を play() して iOS をアンロック
-      Object.values(tracks).forEach(h => h.play());
+    // 各ボタンにクリックハンドラをアタッチ
+    document.querySelectorAll('button.play').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const h  = tracks[id];
 
-      // タップ位置からセクションを判定
-      const y   = e.clientY + window.scrollY;
-      const idx = Math.floor(y / window.innerHeight);
-      const ids = ['rain','piano','kids'];
-      const id  = ids[idx];
-      if (!id) return;
-
-      const h = tracks[id];
-      if (h.playing()) h.stop();
-      else             h.play();
+        if (!h.playing()) {
+          h.play();  // 再生
+          btn.textContent = 'Stop ' + id.charAt(0).toUpperCase() + id.slice(1);
+        } else {
+          h.stop();  // 停止
+          btn.textContent = 'Play ' + id.charAt(0).toUpperCase() + id.slice(1);
+        }
+      });
     });
-  })();
   </script>
 </body>
 </html>
