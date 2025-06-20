@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Scroll Audio Samples Demo (File Protocol Support)</title>
+  <style>
+    html, body { margin: 0; padding: 0; }
+    #startStop {
+      position: fixed; top: 10px; left: 10px; z-index: 100;
+      padding: 8px 12px; font-size: 16px;
+    }
+    section {
+      height: 100vh; display: flex;
+      justify-content: center; align-items: center;
+      font-size: 2rem;
+    }
+    section:nth-child(odd)  { background: #d0e0f0; }
+    section:nth-child(even) { background: #e0d0f0; }
+  </style>
+</head>
+<body>
+  <button id="startStop">Start Audio</button>
+
+  <audio id="rainAudio" src="rain.mp3" preload="auto" loop></audio>
+  <audio id="pianoAudio" src="piano.mp3" preload="auto" loop></audio>
+  <audio id="kidsAudio" src="kids_playing.mp3" preload="auto" loop></audio>
+
+  <section>Rain Sound</section>
+  <section>Piano Sound</section>
+  <section>Kids Playing</section>
+
+  <script>
+    let audioCtx = null;
+    const tracks = [
+      { threshold: 0, elId: 'rainAudio', started: false },
+      { threshold: 1, elId: 'pianoAudio', started: false },
+      { threshold: 2, elId: 'kidsAudio', started: false }
+    ];
+    let scrollHandler;
+
+    document.getElementById('startStop').addEventListener('click', (e) => {
+      const btn = e.target;
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        btn.textContent = 'Stop Audio';
+
+        // Create MediaElementSource for each track
+        tracks.forEach(t => {
+          const audioEl = document.getElementById(t.elId);
+          t.source = audioCtx.createMediaElementSource(audioEl);
+          t.source.connect(audioCtx.destination);
+        });
+
+        scrollHandler = () => {
+          const idx = Math.floor(window.scrollY / window.innerHeight);
+          tracks.forEach(t => {
+            const audioEl = document.getElementById(t.elId);
+            if (idx >= t.threshold && !t.started) {
+              audioEl.play();
+              t.started = true;
+            }
+          });
+        };
+        window.addEventListener('scroll', scrollHandler);
+      } else {
+        window.removeEventListener('scroll', scrollHandler);
+        // Pause all and reset
+        tracks.forEach(t => {
+          const audioEl = document.getElementById(t.elId);
+          audioEl.pause();
+          audioEl.currentTime = 0;
+          t.started = false;
+        });
+        // Close context
+        audioCtx.close();
+        audioCtx = null;
+        btn.textContent = 'Start Audio';
+      }
+    });
+  </script>
+</body>
+</html>
