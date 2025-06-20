@@ -2,30 +2,30 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll Audio with Section Backgrounds</title>
+  <title>Scroll Audio Demo (Pre-play + Gain Control)</title>
   <style>
-    html, body { margin: 0; padding: 0; }
+    html, body { margin:0; padding:0; }
     #startStop {
-      position: fixed; top: 10px; left: 10px; z-index: 100;
-      padding: 8px 12px; font-size: 16px;
+      position: fixed; top: 10px; left: 10px; z-index:100;
+      padding:8px 12px; font-size:16px;
     }
     section {
-      height: 100vh;
-      display: flex; justify-content: center; align-items: center;
-      font-size: 2rem;
+      height:100vh; display:flex;
+      justify-content:center; align-items:center;
+      font-size:2rem;
     }
-    /* Section-specific backgrounds */
-    section[data-track="rainAudio"]   { background: #e0f7fa; }
-    section[data-track="pianoAudio"]  { background: #ffe0b2; }
-    section[data-track="kidsAudio"]   { background: #c8e6c9; }
+    section[data-track="rainAudio"]   { background:#e0f7fa; }
+    section[data-track="pianoAudio"]  { background:#ffe0b2; }
+    section[data-track="kidsAudio"]   { background:#c8e6c9; }
   </style>
 </head>
 <body>
   <button id="startStop">Start Audio</button>
 
-  <audio id="rainAudio" src="rain.mp3" preload="auto" loop></audio>
-  <audio id="pianoAudio" src="piano.mp3" preload="auto" loop></audio>
-  <audio id="kidsAudio"  src="kids_playing.mp3" preload="auto" loop></audio>
+  <!-- Preload your files locally via file:// -->
+  <audio id="rainAudio" src="rain.mp3" loop preload="auto"></audio>
+  <audio id="pianoAudio" src="piano.mp3" loop preload="auto"></audio>
+  <audio id="kidsAudio"  src="kids_playing.mp3" loop preload="auto"></audio>
 
   <section data-track="rainAudio">Rain Sound</section>
   <section data-track="pianoAudio">Piano Sound</section>
@@ -33,42 +33,50 @@
 
   <script>
     let audioCtx = null;
-    const tracks = {};
+    const tracks = {};  // { audioEl, gainNode, started }
 
-    document.getElementById('startStop').addEventListener('click', (e) => {
-      const btn = e.target;
+    document.getElementById('startStop').addEventListener('click', async () => {
+      const btn = document.getElementById('startStop');
       if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        btn.textContent = 'Stop Audio';
-
-        // Wire up each <audio> into the audio graph
+        // 1) Create AudioContext on gesture
+        audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+        
+        // 2) For each <audio>, create source+gain, set gain=0, then play()
         document.querySelectorAll('audio').forEach(el => {
-          const srcNode = audioCtx.createMediaElementSource(el);
-          srcNode.connect(audioCtx.destination);
-          tracks[el.id] = { el, started: false };
+          el.loop = true;
+          // Create source+gain
+          const src = audioCtx.createMediaElementSource(el);
+          const gain = audioCtx.createGain();
+          gain.gain.value = 0;            // start muted
+          src.connect(gain).connect(audioCtx.destination);
+          tracks[el.id] = { el, gain, started: false };
+          el.play();                      // unlocked by this click
         });
 
-        // When 50% of a section is visible, start its track once
+        // 3) IntersectionObserver triggers volume up
         const observer = new IntersectionObserver(entries => {
           entries.forEach(entry => {
             if (entry.isIntersecting) {
               const id = entry.target.dataset.track;
               const t  = tracks[id];
               if (!t.started) {
-                t.el.play();
+                t.gain.gain.setTargetAtTime(0.5, audioCtx.currentTime, 0.1);
                 t.started = true;
               }
             }
           });
         }, { threshold: 0 });
 
+        // Observe each section
         document.querySelectorAll('section').forEach(sec => observer.observe(sec));
+
+        btn.textContent = 'Stop Audio';
       } else {
-        // Stop everything and reset
+        // Stop all: pause elements + close context
         Object.values(tracks).forEach(t => {
           t.el.pause();
           t.el.currentTime = 0;
-          t.started = false;
+          t.gain.disconnect();
         });
         audioCtx.close();
         audioCtx = null;
