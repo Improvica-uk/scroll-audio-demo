@@ -32,29 +32,35 @@
   <section data-track="kidsAudio">Kids Playing</section>
 
   <script>
-    let audioCtx = null;
-    const tracks = {};  // { audioEl, gainNode, started }
+  let audioCtx = null,
+      observer = null;
 
-    document.getElementById('startStop').addEventListener('click', async () => {
-      const btn = document.getElementById('startStop');
-      if (!audioCtx) {
-        // 1) Create AudioContext on gesture
-        audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-        
-        // 2) For each <audio>, create source+gain, set gain=0, then play()
-        document.querySelectorAll('audio').forEach(el => {
-          el.loop = true;
-          // Create source+gain
-          const src = audioCtx.createMediaElementSource(el);
-          const gain = audioCtx.createGain();
-          gain.gain.value = 0;            // start muted
-          src.connect(gain).connect(audioCtx.destination);
-          tracks[el.id] = { el, gain, started: false };
-          el.play();                      // unlocked by this click
-        });
+  document.getElementById('startStop').addEventListener('click', () => {
+    const btn = document.getElementById('startStop');
 
-        // 3) IntersectionObserver triggers volume up
-        const observer = new IntersectionObserver(entries => {
+    if (!audioCtx) {
+      // 1) AudioContext の生成＋AudioElementSource＋GainNode を準備
+      audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      const tracks = {};
+      document.querySelectorAll('audio').forEach(el => {
+        const src  = audioCtx.createMediaElementSource(el);
+        const gain = audioCtx.createGain();
+        gain.gain.value = 0;            // 完全ミュートでスタート
+        src.connect(gain).connect(audioCtx.destination);
+        tracks[el.id] = { el, gain, started: false };
+        el.play();                      // ユーザークリックでアンロック
+      });
+
+      // 2) 最初のスクロールで rainAudio をフェードイン＆Observer登録
+      const onFirstScroll = () => {
+        // rainAudio を鳴らす
+        const rain = tracks['rainAudio'];
+        if (!rain.started) {
+          rain.gain.gain.setTargetAtTime(0.5, audioCtx.currentTime, 0.1);
+          rain.started = true;
+        }
+        // piano、kids セクションを監視
+        observer = new IntersectionObserver(entries => {
           entries.forEach(entry => {
             if (entry.isIntersecting) {
               const id = entry.target.dataset.track;
@@ -67,22 +73,32 @@
           });
         }, { threshold: 0 });
 
-        // Observe each section
-        document.querySelectorAll('section').forEach(sec => observer.observe(sec));
+        // rain 以外のセクションだけ observe
+        document.querySelectorAll('section[data-track]:not([data-track="rainAudio"])')
+                .forEach(sec => observer.observe(sec));
 
-        btn.textContent = 'Stop Audio';
-      } else {
-        // Stop all: pause elements + close context
-        Object.values(tracks).forEach(t => {
-          t.el.pause();
-          t.el.currentTime = 0;
-          t.gain.disconnect();
-        });
-        audioCtx.close();
-        audioCtx = null;
-        btn.textContent = 'Start Audio';
-      }
-    });
-  </script>
+        // 一度だけ実行
+        window.removeEventListener('scroll', onFirstScroll);
+      };
+
+      window.addEventListener('scroll', onFirstScroll);
+      btn.textContent = 'Stop Audio';
+    }
+    else {
+      // 停止＆リセット
+      window.removeEventListener('scroll', onFirstScroll);
+      if (observer) observer.disconnect();
+      document.querySelectorAll('audio').forEach(el => {
+        el.pause();
+        el.currentTime = 0;
+      });
+      audioCtx.close();
+      audioCtx = null;
+      observer = null;
+      btn.textContent = 'Start Audio';
+    }
+  });
+</script>
+
 </body>
 </html>
