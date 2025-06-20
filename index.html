@@ -2,11 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll-Triggered Audio (BufferSource)</title>
+  <title>Scroll-Triggered Audio (Pre-started BufferSources)</title>
   <style>
     html, body { margin:0; padding:0; }
     #startStop {
-      position: fixed; top:10px; left:10px; z-index:100;
+      position:fixed; top:10px; left:10px; z-index:100;
       padding:8px 12px; font-size:16px;
     }
     section {
@@ -14,37 +14,38 @@
       display:flex; justify-content:center; align-items:center;
       font-size:2rem;
     }
-    section[data-track="rainAudio"]  { background:#e0f7fa; }
-    section[data-track="pianoAudio"] { background:#ffe0b2; }
-    section[data-track="kidsAudio"]  { background:#c8e6c9; }
+    section[data-track="rain"]  { background:#e0f7fa; }
+    section[data-track="piano"] { background:#ffe0b2; }
+    section[data-track="kids"]  { background:#c8e6c9; }
   </style>
 </head>
 <body>
   <button id="startStop">Start Audio</button>
 
-  <section data-track="rainAudio">Rain Sound</section>
-  <section data-track="pianoAudio">Piano Sound</section>
-  <section data-track="kidsAudio">Kids Playing</section>
+  <section data-track="rain">Rain Sound</section>
+  <section data-track="piano">Piano Sound</section>
+  <section data-track="kids">Kids Playing</section>
 
   <script>
     let audioCtx = null;
-    const buffers = {};   // will hold decoded AudioBuffers
-    const sources = {};   // will hold active BufferSourceNodes
+    const buffers = {},     // decoded AudioBuffers
+          gainNodes = {},   // GainNodes per track
+          started   = {};   // track start flags
 
-    document.getElementById('startStop')
-      .addEventListener('click', async function toggleAudio() {
+    document.getElementById('startStop').addEventListener('click', async function toggle() {
       const btn = this;
-      // If not started, initialize and decode
       if (!audioCtx) {
         btn.textContent = 'Loading…';
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // 1) Create and resume AudioContext
+        audioCtx = new (window.AudioContext||window.webkitAudioContext)();
         await audioCtx.resume();
 
-        // 1) Fetch & decode all tracks
+        // 2) Fetch & decode all files
         const tracks = [
-          { id: 'rainAudio',  url: 'rain.mp3' },
-          { id: 'pianoAudio', url: 'piano.mp3' },
-          { id: 'kidsAudio',  url: 'kids_playing.mp3' }
+          { id:'rain',  url:'rain.mp3' },
+          { id:'piano', url:'piano.mp3' },
+          { id:'kids',  url:'kids_playing.mp3' }
         ];
         await Promise.all(tracks.map(async t => {
           const res = await fetch(t.url);
@@ -52,43 +53,43 @@
           buffers[t.id] = await audioCtx.decodeAudioData(ab);
         }));
 
-        btn.textContent = 'Start Audio';
+        // 3) Create BufferSource + GainNode for each, start them muted
+        tracks.forEach(t => {
+          const src  = audioCtx.createBufferSource();
+          const gain = audioCtx.createGain();
+          src.buffer   = buffers[t.id];
+          src.loop     = true;
+          gain.gain.value = 0;
+          src.connect(gain).connect(audioCtx.destination);
+          src.start(0);               // <— MUST be inside click
+          gainNodes[t.id] = gain;
+          started[t.id]   = false;
+        });
 
-        // 2) Observe sections; fire when fully in view
-        const observer = new IntersectionObserver((entries) => {
-          entries.forEach(entry => {
-            if (entry.intersectionRatio === 1) {
-              const id = entry.target.dataset.track;
-              if (!sources[id]) {
-                // Create source + gain for this track
-                const src  = audioCtx.createBufferSource();
-                const gain = audioCtx.createGain();
-                src.buffer   = buffers[id];
-                src.loop     = true;
-                gain.gain.value = 0;
-                src.connect(gain).connect(audioCtx.destination);
-                src.start();
-                // fade in
-                gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.1);
-                sources[id] = src;
+        btn.textContent = 'Stop Audio';
+
+        // 4) Observe sections fully in-view
+        const obs = new IntersectionObserver(entries => {
+          entries.forEach(e => {
+            if (e.intersectionRatio === 1) {
+              const id = e.target.dataset.track;
+              if (!started[id]) {
+                gainNodes[id].gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.1);
+                started[id] = true;
               }
             }
           });
         }, { threshold: 1.0 });
 
-        document.querySelectorAll('section')
-          .forEach(sec => observer.observe(sec));
-
-        btn.textContent = 'Stop Audio';
+        document.querySelectorAll('section').forEach(sec => obs.observe(sec));
       }
       else {
-        // Stop & clean up
-        Object.values(sources).forEach(src => src.stop());
+        // Stop everything
         await audioCtx.close();
         audioCtx = null;
-        Object.keys(buffers).forEach(k => delete buffers[k]);
-        Object.keys(sources).forEach(k => delete sources[k]);
         btn.textContent = 'Start Audio';
+        // reset flags if you want to allow restart
+        ['rain','piano','kids'].forEach(id => started[id] = false);
       }
     });
   </script>
