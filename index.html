@@ -2,45 +2,76 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Section-Button Audio Demo</title>
+  <title>Video Background + Audio Button Demo</title>
   <style>
     html, body { margin:0; padding:0; }
     section {
-      height:100vh;
+      position: relative;
+      width:100%; height:100vh;
+      overflow:hidden;
       display:flex; flex-direction:column;
       justify-content:center; align-items:center;
-      font-size:2rem; position:relative;
+      color:white; font-size:2rem;
     }
+    /* 背景動画 */
+    section video.bg {
+      position:absolute; top:50%; left:50%;
+      min-width:100%; min-height:100%;
+      width:auto; height:auto;
+      transform:translate(-50%,-50%);
+      object-fit:cover; z-index:-1;
+    }
+    /* セクション内コンテンツ */
+    .content {
+      z-index:1;
+      text-shadow:0 0 8px rgba(0,0,0,0.7);
+      margin-bottom:1em;
+    }
+    /* 再生ボタン */
     button.play {
-      margin-top:1em; padding:0.5em 1em; font-size:1rem;
+      z-index:1;
+      padding:0.5em 1em;
+      font-size:1rem;
+      cursor:pointer;
     }
-    section[data-id="rain"]  { background:#e0f7fa; }
-    section[data-id="piano"] { background:#ffe0b2; }
-    section[data-id="kids"]  { background:#c8e6c9; }
   </style>
 </head>
 <body>
-  <!-- Howler.js CDN -->
+  <!-- Howler.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
 
+  <!-- セクション1：雨 -->
   <section data-id="rain">
-    Rain Sound
+    <video class="bg" autoplay muted loop playsinline>
+      <source src="rain.mp4" type="video/mp4">
+    </video>
+    <div class="content">雨の風景</div>
     <button class="play" data-id="rain">Play Rain</button>
   </section>
+
+  <!-- セクション2：ピアノ -->
   <section data-id="piano">
-    Piano Sound
+    <video class="bg" autoplay muted loop playsinline>
+      <source src="piano.mp4" type="video/mp4">
+    </video>
+    <div class="content">ピアノ演奏</div>
     <button class="play" data-id="piano">Play Piano</button>
   </section>
+
+  <!-- セクション3：子供たち -->
   <section data-id="kids">
-    Kids Playing
+    <video class="bg" autoplay muted loop playsinline>
+      <source src="kids.mp4" type="video/mp4">
+    </video>
+    <div class="content">子供たちの遊び</div>
     <button class="play" data-id="kids">Play Kids</button>
   </section>
 
   <script>
-    // Howler.js でトラックを事前定義
+    // Howler.js で音声トラックを定義
     const tracks = {
-      rain:  new Howl({ src:['rain.mp3'], loop:true, volume:0.7, html5:true }),
-      piano: new Howl({ src:['piano.mp3'], loop:true, volume:0.7, html5:true }),
+      rain:  new Howl({ src:['rain.mp3'],         loop:true, volume:0.7, html5:true }),
+      piano: new Howl({ src:['piano.mp3'],        loop:true, volume:0.7, html5:true }),
       kids:  new Howl({ src:['kids_playing.mp3'], loop:true, volume:0.7, html5:true })
     };
 
@@ -51,10 +82,10 @@
         const h  = tracks[id];
 
         if (!h.playing()) {
-          h.play();            // 再生
-          btn.textContent = 'Stop';
+          h.play();  // 再生
+          btn.textContent = 'Stop ' + id.charAt(0).toUpperCase() + id.slice(1);
         } else {
-          h.stop();            // 停止
+          h.stop();  // 停止
           btn.textContent = 'Play ' + id.charAt(0).toUpperCase() + id.slice(1);
         }
       });
