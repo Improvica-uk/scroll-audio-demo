@@ -2,71 +2,84 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll-Triggered Audio with Howler.js</title>
+  <title>Scroll-Triggered Audio (Howler.js, iOS-friendly)</title>
   <style>
-    html,body {margin:0;padding:0;}
-    #startStop {position:fixed;top:10px;left:10px;z-index:100;padding:8px 12px;}
-    section {height:100vh;display:flex;align-items:center;justify-content:center;font-size:2rem;}
-    section[data-track="rain"]  {background:#e0f7fa;}
-    section[data-track="piano"] {background:#ffe0b2;}
-    section[data-track="kids"]  {background:#c8e6c9;}
+    html, body { margin:0; padding:0; }
+    #startStop {
+      position: fixed; top:10px; left:10px; z-index:100;
+      padding:8px 12px; font-size:16px;
+    }
+    section {
+      height:100vh;
+      display:flex; align-items:center; justify-content:center;
+      font-size:2rem;
+    }
+    section[data-track="rain"]  { background:#e0f7fa; }
+    section[data-track="piano"] { background:#ffe0b2; }
+    section[data-track="kids"]  { background:#c8e6c9; }
   </style>
 </head>
 <body>
   <button id="startStop">Start Audio</button>
 
-  <!-- Howler.js CDN -->
+  <!-- Howler.js (force HTML5 mode for iOS) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
-
-  <audio id="rain"  src="rain.mp3"></audio>
-  <audio id="piano" src="piano.mp3"></audio>
-  <audio id="kids"  src="kids_playing.mp3"></audio>
 
   <section data-track="rain">Rain Sound</section>
   <section data-track="piano">Piano Sound</section>
   <section data-track="kids">Kids Playing</section>
 
   <script>
-    // 1) Howler で各トラックを定義（preload＋ループ＋初期ボリューム0）
+    // 1) Define your three loops, HTML5 mode to satisfy iOS
     const tracks = {
-      rain:  new Howl({ src:['rain.mp3'],  preload:true, loop:true, volume:0 }),
-      piano: new Howl({ src:['piano.mp3'], preload:true, loop:true, volume:0 }),
-      kids:  new Howl({ src:['kids_playing.mp3'], preload:true, loop:true, volume:0 })
+      rain:  new Howl({ src:['rain.mp3'],  loop:true, volume:0, html5:true }),
+      piano: new Howl({ src:['piano.mp3'], loop:true, volume:0, html5:true }),
+      kids:  new Howl({ src:['kids_playing.mp3'], loop:true, volume:0, html5:true })
     };
 
-    const btn = document.getElementById('startStop');
-    const secs = document.querySelectorAll('section[data-track]');
+    const btn       = document.getElementById('startStop');
+    const sections  = Array.from(document.querySelectorAll('section[data-track]'));
+    let   running   = false;
 
-    // 要素が完全にビューポート内にあるかチェック
-    function isFullyVisible(el) {
+    // Check if a section is fully in view
+    function isFullyInView(el) {
       const r = el.getBoundingClientRect();
       return r.top >= 0 && r.bottom <= window.innerHeight;
     }
 
-    // スクロールで音量をアンミュート
+    // On scroll, un-mute the appropriate track
     function onScroll() {
-      secs.forEach(sec => {
+      sections.forEach(sec => {
         const id = sec.dataset.track;
-        if (!tracks[id]._volume && isFullyVisible(sec)) {
-          tracks[id].volume(0.5);  // ミュート解除
+        // only un-mute once
+        if (isFullyInView(sec) && tracks[id].volume() === 0) {
+          tracks[id].volume(0.5);
         }
       });
     }
 
     btn.addEventListener('click', () => {
-      if (btn.dataset.running) {
-        // ■ Stop
-        window.removeEventListener('scroll', onScroll);
-        Object.values(tracks).forEach(h => { h.stop(); h.volume(0); });
-        btn.textContent = 'Start Audio';
-        delete btn.dataset.running;
-      } else {
-        // ■ Start（ここがポイント：click 内で一発で play()）
-        btn.dataset.running = 'true';
+      if (!running) {
+        // ■ Start
+        running = true;
         btn.textContent = 'Stop Audio';
-        Object.values(tracks).forEach(h => h.play());         // 再生アンロック
+
+        // 2) Play all tracks (silent) inside the click handler
+        Object.values(tracks).forEach(h => h.play());
+
+        // 3) Watch scroll
         window.addEventListener('scroll', onScroll, { passive:true });
-        onScroll(); // ページロード時に section1 など既に見えているなら即時アンミュート
+        onScroll(); // in case section1 is already fully visible
+      } else {
+        // ■ Stop & reset
+        running = false;
+        btn.textContent = 'Start Audio';
+
+        window.removeEventListener('scroll', onScroll);
+        Object.values(tracks).forEach(h => {
+          h.stop();
+          h.volume(0);
+        });
       }
     });
   </script>
