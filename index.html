@@ -2,11 +2,11 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll-Triggered Audio (Pre-started BufferSources)</title>
+  <title>Scroll-Triggered Audio (Fully In-View)</title>
   <style>
     html, body { margin:0; padding:0; }
     #startStop {
-      position:fixed; top:10px; left:10px; z-index:100;
+      position: fixed; top:10px; left:10px; z-index:100;
       padding:8px 12px; font-size:16px;
     }
     section {
@@ -22,75 +22,61 @@
 <body>
   <button id="startStop">Start Audio</button>
 
+  <!-- Make sure these MP3s live next to your HTML on GH Pages -->
+  <audio id="rain"  src="rain.mp3"          preload="auto" loop></audio>
+  <audio id="piano" src="piano.mp3"         preload="auto" loop></audio>
+  <audio id="kids"  src="kids_playing.mp3"  preload="auto" loop></audio>
+
   <section data-track="rain">Rain Sound</section>
   <section data-track="piano">Piano Sound</section>
   <section data-track="kids">Kids Playing</section>
 
   <script>
-    let audioCtx = null;
-    const buffers = {},     // decoded AudioBuffers
-          gainNodes = {},   // GainNodes per track
-          started   = {};   // track start flags
+    const btn     = document.getElementById('startStop');
+    const audios  = {};   // will hold { el: HTMLAudioElement, started: boolean }
 
-    document.getElementById('startStop').addEventListener('click', async function toggle() {
-      const btn = this;
-      if (!audioCtx) {
-        btn.textContent = 'Loading…';
-
-        // 1) Create and resume AudioContext
-        audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-        await audioCtx.resume();
-
-        // 2) Fetch & decode all files
-        const tracks = [
-          { id:'rain',  url:'rain.mp3' },
-          { id:'piano', url:'piano.mp3' },
-          { id:'kids',  url:'kids_playing.mp3' }
-        ];
-        await Promise.all(tracks.map(async t => {
-          const res = await fetch(t.url);
-          const ab  = await res.arrayBuffer();
-          buffers[t.id] = await audioCtx.decodeAudioData(ab);
-        }));
-
-        // 3) Create BufferSource + GainNode for each, start them muted
-        tracks.forEach(t => {
-          const src  = audioCtx.createBufferSource();
-          const gain = audioCtx.createGain();
-          src.buffer   = buffers[t.id];
-          src.loop     = true;
-          gain.gain.value = 0;
-          src.connect(gain).connect(audioCtx.destination);
-          src.start(0);               // <— MUST be inside click
-          gainNodes[t.id] = gain;
-          started[t.id]   = false;
+    btn.addEventListener('click', () => {
+      if (btn.dataset.running) {
+        // ■ Stop
+        Object.values(audios).forEach(a => {
+          a.el.pause();
+          a.el.currentTime = 0;
         });
-
-        btn.textContent = 'Stop Audio';
-
-        // 4) Observe sections fully in-view
-        const obs = new IntersectionObserver(entries => {
-          entries.forEach(e => {
-            if (e.intersectionRatio === 1) {
-              const id = e.target.dataset.track;
-              if (!started[id]) {
-                gainNodes[id].gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.1);
-                started[id] = true;
-              }
-            }
-          });
-        }, { threshold: 1.0 });
-
-        document.querySelectorAll('section').forEach(sec => obs.observe(sec));
-      }
-      else {
-        // Stop everything
-        await audioCtx.close();
-        audioCtx = null;
         btn.textContent = 'Start Audio';
-        // reset flags if you want to allow restart
-        ['rain','piano','kids'].forEach(id => started[id] = false);
+        btn.removeAttribute('data-running');
+        return;
       }
+
+      // ■ Start
+      btn.textContent = 'Stop Audio';
+      btn.dataset.running = 'true';
+
+      // 1) Preplay & mute all audios
+      document.querySelectorAll('audio').forEach(el => {
+        el.volume = 0;
+        el.play().catch(()=>{/* swallow autoplay rejections */});
+        audios[el.id] = { el, started: false };
+      });
+
+      // 2) One IntersectionObserver for all sections
+      const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          // Only when fully in view
+          if (entry.intersectionRatio === 1) {
+            const id = entry.target.dataset.track;
+            const a  = audios[id];
+            if (a && !a.started) {
+              a.el.volume   = 0.5;   // bump volume instantly
+              a.started     = true;
+            }
+          }
+        });
+      }, { threshold: 1.0 });
+
+      // Observe every section
+      document.querySelectorAll('section').forEach(sec => {
+        observer.observe(sec);
+      });
     });
   </script>
 </body>
