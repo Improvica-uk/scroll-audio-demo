@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll Audio Samples Demo (File Protocol Support)</title>
+  <title>Scroll Audio with IntersectionObserver</title>
   <style>
     html, body { margin: 0; padding: 0; }
     #startStop {
@@ -14,8 +14,9 @@
       justify-content: center; align-items: center;
       font-size: 2rem;
     }
-    section:nth-child(odd)  { background: #d0e0f0; }
-    section:nth-child(even) { background: #e0d0f0; }
+    section:nth-child(1) { background: #e0f7fa; }
+    section:nth-child(2) { background: #ffe0b2; }
+    section:nth-child(3) { background: #c8e6c9; }
   </style>
 </head>
 <body>
@@ -25,56 +26,58 @@
   <audio id="pianoAudio" src="piano.mp3" preload="auto" loop></audio>
   <audio id="kidsAudio" src="kids_playing.mp3" preload="auto" loop></audio>
 
-  <section>Rain Sound</section>
-  <section>Piano Sound</section>
-  <section>Kids Playing</section>
+  <section data-track="rainAudio">Rain Sound</section>
+  <section data-track="pianoAudio">Piano Sound</section>
+  <section data-track="kidsAudio">Kids Playing</section>
 
   <script>
     let audioCtx = null;
-    const tracks = [
-      { threshold: 0, elId: 'rainAudio', started: false },
-      { threshold: 1, elId: 'pianoAudio', started: false },
-      { threshold: 2, elId: 'kidsAudio', started: false }
-    ];
-    let scrollHandler;
+    const tracks = {};
 
-    document.getElementById('startStop').addEventListener('click', (e) => {
+    document.getElementById('startStop').addEventListener('click', async (e) => {
       const btn = e.target;
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         btn.textContent = 'Stop Audio';
 
-        // Create MediaElementSource for each track
-        tracks.forEach(t => {
-          const audioEl = document.getElementById(t.elId);
-          t.source = audioCtx.createMediaElementSource(audioEl);
-          t.source.connect(audioCtx.destination);
+        // Create MediaElementSource for each audio element
+        document.querySelectorAll('audio').forEach(el => {
+          const src = audioCtx.createMediaElementSource(el);
+          src.connect(audioCtx.destination);
+          tracks[el.id] = { el, started: false };
         });
 
-        scrollHandler = () => {
-          const idx = Math.floor(window.scrollY / window.innerHeight);
-          tracks.forEach(t => {
-            const audioEl = document.getElementById(t.elId);
-            if (idx >= t.threshold && !t.started) {
-              audioEl.play();
-              t.started = true;
+        // IntersectionObserver fires when section is at least 50% visible
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              const id = entry.target.dataset.track;
+              if (!tracks[id].started) {
+                tracks[id].el.play();
+                tracks[id].started = true;
+              }
             }
           });
-        };
-        window.addEventListener('scroll', scrollHandler);
+        }, {
+          threshold: 0.5
+        });
+
+        // Observe each section
+        document.querySelectorAll('section').forEach(sec => {
+          observer.observe(sec);
+        });
+
       } else {
-        window.removeEventListener('scroll', scrollHandler);
-        // Pause all and reset
-        tracks.forEach(t => {
-          const audioEl = document.getElementById(t.elId);
-          audioEl.pause();
-          audioEl.currentTime = 0;
+        // Stop everything
+        Object.values(tracks).forEach(t => {
+          t.el.pause();
+          t.el.currentTime = 0;
           t.started = false;
         });
-        // Close context
         audioCtx.close();
         audioCtx = null;
         btn.textContent = 'Start Audio';
+        // You may also want to disconnect the observer here if you kept a reference
       }
     });
   </script>
