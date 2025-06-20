@@ -2,116 +2,97 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Video & Scroll-Triggered Audio (Single Unlock)</title>
+  <title>Canvas Background + Tap Audio Demo</title>
   <style>
-    html, body { margin:0; padding:0; }
-    #unlock {
-      position: fixed; top:10px; left:10px; z-index:100;
-      padding:8px 12px; font-size:16px;
+    html, body { margin:0; padding:0; overflow-x:hidden; }
+    /* スクロール領域を作るために body 高さを指定 */
+    body { height:300vh; }
+    /* Canvas を固定配置 */
+    canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: -1;
     }
-    section {
-      position: relative;
-      width:100%; height:100vh;
-      overflow:hidden;
-      display:flex; justify-content:center; align-items:center;
-      color:white; font-size:2rem;
-    }
-    video.bg {
-      position:absolute; top:50%; left:50%;
-      min-width:100%; min-height:100%;
-      transform:translate(-50%,-50%);
-      object-fit:cover; z-index:-1;
-    }
-    .content {
-      z-index:1;
-      text-shadow:0 0 8px rgba(0,0,0,0.7);
+    /* 説明テキスト */
+    #hint {
+      position: fixed;
+      top: 10px; left: 10px;
+      background: rgba(0,0,0,0.5);
+      color: white; padding: 8px;
+      font-size: 1rem; border-radius: 4px;
+      z-index: 10;
     }
   </style>
 </head>
 <body>
-  <button id="unlock">Tap to Enable Audio</button>
+  <div id="hint">▶︎ Canvas をタップすると、「雨」「ピアノ」「子供」が順に再生</div>
+  <canvas id="bg"></canvas>
 
-  <section data-id="rain">
-    <video class="bg" autoplay muted loop playsinline>
-      <source src="rain.mp4" type="video/mp4">
-    </video>
-    <div class="content">雨の風景</div>
-  </section>
-
-  <section data-id="piano">
-    <video class="bg" autoplay muted loop playsinline>
-      <source src="piano.mp4" type="video/mp4">
-    </video>
-    <div class="content">ピアノ演奏</div>
-  </section>
-
-  <section data-id="kids">
-    <video class="bg" autoplay muted loop playsinline>
-      <source src="kids.mp4" type="video/mp4">
-    </video>
-    <div class="content">子供たちの遊び</div>
-  </section>
-
+  <!-- Howler.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
   <script>
-  (async () => {
-    // 1) 先に音声をフェッチ＆デコード
-    const files = {
-      rain:  'rain.mp3',
-      piano: 'piano.mp3',
-      kids:  'kids_playing.mp3'
-    };
-    const buffers = {};
-    await Promise.all(Object.entries(files).map(async ([id, url]) => {
-      const res = await fetch(url);
-      const ab  = await res.arrayBuffer();
-      const off = new OfflineAudioContext(1, 512, 44100);
-      buffers[id] = await off.decodeAudioData(ab);
-    }));
+  (function() {
+    const canvas = document.getElementById('bg');
+    const ctx    = canvas.getContext('2d');
 
-    // ビューポート完全判定
-    const fullyVisible = el => {
-      const r = el.getBoundingClientRect();
-      return r.top >= 0 && r.bottom <= window.innerHeight;
-    };
+    // Canvas を viewport, 3×viewport 高さに合わせる
+    function resize() {
+      canvas.width  = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
 
-    let audioCtx, gainNodes, started;
+    // 背景に使う３つの video 要素を準備
+    const videoSrcs = ['rain.mp4','piano.mp4','kids.mp4'];
+    const videos = videoSrcs.map(src => {
+      const v = document.createElement('video');
+      v.src       = src;
+      v.loop      = true;
+      v.muted     = true;
+      v.playsInline = true;
+      v.autoplay  = true;
+      v.play().catch(()=>{});  // 自動再生トライ
+      return v;
+    });
 
-    // スクロール／タッチ移動で音声フェードイン
-    const onMove = () => {
-      document.querySelectorAll('section[data-id]').forEach(sec => {
-        const id = sec.dataset.id;
-        if (!started[id] && fullyVisible(sec)) {
-          gainNodes[id].gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.2);
-          started[id] = true;
-        }
+    // ループ描画
+    function draw() {
+      const H = window.innerHeight, W = window.innerWidth;
+      ctx.clearRect(0,0,W,H*3);
+      videos.forEach((v,i) => {
+        ctx.drawImage(v, 0, H*i, W, H);
       });
+      requestAnimationFrame(draw);
+    }
+    draw();
+
+    // Howler.js で音声トラックを用意
+    const tracks = {
+      rain:  new Howl({ src:['rain.mp3'],         loop:true, volume:0.7, html5:true }),
+      piano: new Howl({ src:['piano.mp3'],        loop:true, volume:0.7, html5:true }),
+      kids:  new Howl({ src:['kids_playing.mp3'], loop:true, volume:0.7, html5:true })
     };
 
-    document.getElementById('unlock').addEventListener('click', function() {
-      if (audioCtx) return;  // 既にアンロック済み
+    // タップ位置でセクション判定＆トグル再生
+    canvas.addEventListener('pointerdown', e => {
+      // 事前に iOS での再生アンロックを兼ねる
+      Object.values(tracks).forEach(h => { if (!h.playing()) h.play(); });
 
-      // 2) タップ内で AudioContext を作り、BufferSource を start() する
-      audioCtx   = new AudioContext();
-      gainNodes  = {};
-      started    = { rain:false, piano:false, kids:false };
+      const y = e.clientY + window.scrollY;
+      const idx = Math.floor(y / window.innerHeight);
+      const ids = ['rain','piano','kids'];
+      const id = ids[idx];
+      if (!id || !tracks[id]) return;
 
-      for (const id in buffers) {
-        const src  = audioCtx.createBufferSource();
-        const gain = audioCtx.createGain();
-        src.buffer = buffers[id];
-        src.loop   = true;
-        gain.gain.value = 0;
-        src.connect(gain).connect(audioCtx.destination);
-        src.start(0);  // この start が iOS Safari でも許可される
-        gainNodes[id] = gain;
+      const h = tracks[id];
+      if (h.playing(id)) {
+        h.stop();
+      } else {
+        h.play();
       }
-
-      // 3) スクロールとタッチ移動を監視
-      window.addEventListener('scroll', onMove, { passive:true });
-      window.addEventListener('touchmove', onMove, { passive:true });
-      onMove();  // セクション1が先に見えていれば即発火
-
-      this.style.display = 'none';  // ボタンを隠す
     });
   })();
   </script>
