@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll-Triggered Audio (Fully In View)</title>
+  <title>Scroll-Triggered Audio (Fully In View for All Tracks)</title>
   <style>
     html, body { margin:0; padding:0; }
     #startStop {
@@ -22,9 +22,10 @@
 <body>
   <button id="startStop">Start Audio</button>
 
-  <audio id="rainAudio"  src="rain.mp3" preload="auto" loop></audio>
-  <audio id="pianoAudio" src="piano.mp3" preload="auto" loop></audio>
-  <audio id="kidsAudio"  src="kids_playing.mp3" preload="auto" loop></audio>
+  <!-- Your audio files must be in the same folder -->
+  <audio id="rainAudio"  src="rain.mp3"          preload="auto" loop></audio>
+  <audio id="pianoAudio" src="piano.mp3"         preload="auto" loop></audio>
+  <audio id="kidsAudio"  src="kids_playing.mp3"  preload="auto" loop></audio>
 
   <section data-track="rainAudio">Rain Sound</section>
   <section data-track="pianoAudio">Piano Sound</section>
@@ -32,33 +33,34 @@
 
   <script>
     let audioCtx = null;
-    const tracks = {}; // { el, gain, started }
+    const tracks = {};  // will hold { el, gain, started }
 
     document.getElementById('startStop').addEventListener('click', () => {
       const btn = document.getElementById('startStop');
+
       if (!audioCtx) {
-        // 1) Unlock AudioContext
+        // 1) Unlock AudioContext on user gesture
         audioCtx = new (window.AudioContext||window.webkitAudioContext)();
         btn.textContent = 'Stop Audio';
 
-        // 2) Wire up each <audio> through a GainNode, start them silent
+        // 2) For each <audio>, create a GainNode (start at 0), wire into AudioContext, and play
         document.querySelectorAll('audio').forEach(el => {
-          const src  = audioCtx.createMediaElementSource(el);
-          const gain = audioCtx.createGain();
-          gain.gain.value = 0;               // fully silent initially
-          src.connect(gain).connect(audioCtx.destination);
+          const source = audioCtx.createMediaElementSource(el);
+          const gain   = audioCtx.createGain();
+          gain.gain.value = 0;                    // start completely silent
+          source.connect(gain).connect(audioCtx.destination);
           tracks[el.id] = { el, gain, started: false };
-          el.play();                         // user gesture unlock
+          el.play();                              // user gesture unlocks playback
         });
 
-        // 3) Observe all sections, fire when fully visible (threshold:1.0)
-        const observer = new IntersectionObserver(entries => {
+        // 3) Observe each section; only fire when fully in view (threshold:1.0)
+        const observer = new IntersectionObserver((entries) => {
           entries.forEach(entry => {
             if (entry.intersectionRatio === 1) {
               const id = entry.target.dataset.track;
               const t  = tracks[id];
               if (!t.started) {
-                // fade up to 0.5 over 0.1s
+                // fade gain from 0 → 0.5 over 0.1s
                 t.gain.gain.setTargetAtTime(0.5, audioCtx.currentTime, 0.1);
                 t.started = true;
               }
@@ -71,11 +73,10 @@
         });
 
       } else {
-        // Stop and reset everything
+        // Stop & reset everything
         Object.values(tracks).forEach(t => {
           t.el.pause();
           t.el.currentTime = 0;
-          t.gain.disconnect();
         });
         audioCtx.close();
         audioCtx = null;
