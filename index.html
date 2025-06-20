@@ -2,86 +2,95 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll-Triggered Audio (Howler.js, iOS-friendly)</title>
+  <title>Scroll-Triggered Audio (Fully iOS-Compatible)</title>
   <style>
     html, body { margin:0; padding:0; }
-    #startStop {
-      position: fixed; top:10px; left:10px; z-index:100;
-      padding:8px 12px; font-size:16px;
-    }
+    #start { position: fixed; top:10px; left:10px; z-index:100; padding:8px; }
     section {
       height:100vh;
-      display:flex; align-items:center; justify-content:center;
+      display:flex; justify-content:center; align-items:center;
       font-size:2rem;
     }
-    section[data-track="rain"]  { background:#e0f7fa; }
-    section[data-track="piano"] { background:#ffe0b2; }
-    section[data-track="kids"]  { background:#c8e6c9; }
+    section[data-id="rain"]  { background:#e0f7fa; }
+    section[data-id="piano"] { background:#ffe0b2; }
+    section[data-id="kids"]  { background:#c8e6c9; }
   </style>
 </head>
 <body>
-  <button id="startStop">Start Audio</button>
+  <button id="start">Start Audio</button>
 
-  <!-- Howler.js (force HTML5 mode for iOS) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
-
-  <section data-track="rain">Rain Sound</section>
-  <section data-track="piano">Piano Sound</section>
-  <section data-track="kids">Kids Playing</section>
+  <section data-id="rain">Rain</section>
+  <section data-id="piano">Piano</section>
+  <section data-id="kids">Kids Playing</section>
 
   <script>
-    // 1) Define your three loops, HTML5 mode to satisfy iOS
-    const tracks = {
-      rain:  new Howl({ src:['rain.mp3'],  loop:true, volume:0, html5:true }),
-      piano: new Howl({ src:['piano.mp3'], loop:true, volume:0, html5:true }),
-      kids:  new Howl({ src:['kids_playing.mp3'], loop:true, volume:0, html5:true })
+  (async function(){
+    // 1) PRELOAD & DECODE outside any click
+    const files = {
+      rain:  'rain.mp3',
+      piano: 'piano.mp3',
+      kids:  'kids_playing.mp3'
     };
+    const audioBuffers = {};
+    await Promise.all(Object.entries(files).map(async ([key,url])=>{
+      const resp = await fetch(url);
+      const arrayBuffer = await resp.arrayBuffer();
+      // decode via OfflineAudioContext so it's off the main thread
+      const off = new OfflineAudioContext(1, 2, 44100);
+      audioBuffers[key] = await off.decodeAudioData(arrayBuffer);
+    }));
 
-    const btn       = document.getElementById('startStop');
-    const sections  = Array.from(document.querySelectorAll('section[data-track]'));
-    let   running   = false;
-
-    // Check if a section is fully in view
-    function isFullyInView(el) {
+    // helper to detect full-visibility
+    function fullyVisible(el){
       const r = el.getBoundingClientRect();
       return r.top >= 0 && r.bottom <= window.innerHeight;
     }
 
-    // On scroll, un-mute the appropriate track
-    function onScroll() {
-      sections.forEach(sec => {
-        const id = sec.dataset.track;
-        // only un-mute once
-        if (isFullyInView(sec) && tracks[id].volume() === 0) {
-          tracks[id].volume(0.5);
+    // scroll handler
+    let gainNodes, started;
+    function onScroll(){
+      document.querySelectorAll('section').forEach(sec=>{
+        const id = sec.dataset.id;
+        if (!started[id] && fullyVisible(sec)){
+          gainNodes[id].gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.1);
+          started[id] = true;
         }
       });
     }
 
-    btn.addEventListener('click', () => {
-      if (!running) {
-        // ■ Start
-        running = true;
-        btn.textContent = 'Stop Audio';
+    let audioCtx;
+    document.getElementById('start').addEventListener('click', function(){
+      if (!audioCtx) {
+        // 2) INSIDE the click: create AudioContext & start all sources at once
+        audioCtx   = new AudioContext();
+        gainNodes  = {};
+        started    = { rain:false, piano:false, kids:false };
 
-        // 2) Play all tracks (silent) inside the click handler
-        Object.values(tracks).forEach(h => h.play());
+        for (const id in audioBuffers){
+          const src  = audioCtx.createBufferSource();
+          const gain = audioCtx.createGain();
+          src.buffer = audioBuffers[id];
+          src.loop   = true;
+          gain.gain.value = 0;                  // start muted
+          src.connect(gain).connect(audioCtx.destination);
+          src.start(0);                         // MUST be direct in click
+          gainNodes[id] = gain;
+        }
 
-        // 3) Watch scroll
+        // 3) listen to scroll
         window.addEventListener('scroll', onScroll, { passive:true });
-        onScroll(); // in case section1 is already fully visible
+        onScroll();  // in case section1 is already fully visible
+        this.textContent = 'Stop Audio';
       } else {
-        // ■ Stop & reset
-        running = false;
-        btn.textContent = 'Start Audio';
-
+        // STOP & CLEAN UP
         window.removeEventListener('scroll', onScroll);
-        Object.values(tracks).forEach(h => {
-          h.stop();
-          h.volume(0);
-        });
+        Object.values(gainNodes).forEach(g=>g.gain.cancelScheduledValues(audioCtx.currentTime));
+        audioCtx.close();
+        audioCtx = null;
+        this.textContent = 'Start Audio';
       }
     });
+  })();
   </script>
 </body>
 </html>
