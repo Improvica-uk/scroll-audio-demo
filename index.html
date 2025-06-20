@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll Audio (muted→unmuted)</title>
+  <title>Scroll-Triggered Audio (BoundingClientRect)</title>
   <style>
     html, body { margin:0; padding:0; }
     #startStop {
@@ -33,25 +33,27 @@
   <script>
     const btn     = document.getElementById('startStop');
     const audios  = {};   // { el:HTMLAudioElement, started:boolean }
-    let   baseH   = 0;
+    const secs    = {};   // 各セクション要素
+
+    // 要素をキャッシュ
+    ['rain','piano','kids'].forEach(id => {
+      audios[id] = { el: document.getElementById(id), started: false };
+      secs[id]   = document.querySelector(`section[data-track="${id}"]`);
+    });
+
+    function isFullyVisible(el) {
+      const r = el.getBoundingClientRect();
+      return r.top >= 0 && r.bottom <= window.innerHeight;
+    }
 
     function onScroll() {
-      const y = window.scrollY;
-      // Section 1
-      if (!audios.rain.started && y > 0) {
-        audios.rain.el.muted   = false;
-        audios.rain.started    = true;
-      }
-      // Section 2
-      if (!audios.piano.started && y >= baseH * 1) {
-        audios.piano.el.muted  = false;
-        audios.piano.started   = true;
-      }
-      // Section 3
-      if (!audios.kids.started && y >= baseH * 2) {
-        audios.kids.el.muted   = false;
-        audios.kids.started    = true;
-      }
+      Object.keys(secs).forEach(id => {
+        const a = audios[id];
+        if (!a.started && isFullyVisible(secs[id])) {
+          a.el.muted   = false;
+          a.started    = true;
+        }
+      });
     }
 
     btn.addEventListener('click', () => {
@@ -71,17 +73,16 @@
         btn.dataset.running = 'true';
         btn.textContent     = 'Stop Audio';
 
-        baseH = window.innerHeight;
-        // play & mute all tracks immediately (inside click)
-        ['rain','piano','kids'].forEach(id => {
-          const el = document.getElementById(id);
-          el.muted = true;
-          el.play().catch(()=>{});  // iOSでも必ず再生開始
-          audios[id] = { el, started: false };
+        // 再生をタップ内で一度だけアンロック＋完全ミュート
+        Object.values(audios).forEach(a => {
+          a.el.muted = true;
+          a.el.play().catch(()=>{});
         });
 
-        // listen scroll
+        // スクロールでそれぞれのセクションを判定
         window.addEventListener('scroll', onScroll, { passive: true });
+        // 初期スクロール判定（ページ読込直後にセクション１が見えている場合）
+        onScroll();
       }
     });
   </script>
