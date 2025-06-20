@@ -2,97 +2,93 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Canvas Background + Tap Audio Demo</title>
+  <title>Canvas＋背景動画＋タップで音声デモ</title>
   <style>
     html, body { margin:0; padding:0; overflow-x:hidden; }
-    /* スクロール領域を作るために body 高さを指定 */
-    body { height:300vh; }
-    /* Canvas を固定配置 */
-    canvas {
+    body { height:300vh; }              /* 3画面分のスクロール領域 */
+    /* Canvas を固定表示＆イベント透過 */
+    canvas#bg {
       position: fixed;
       top: 0; left: 0;
-      width: 100vw;
-      height: 100vh;
+      width: 100vw; height: 100vh;
       z-index: -1;
+      pointer-events: none;             /* ← ここが重要 */
     }
-    /* 説明テキスト */
     #hint {
       position: fixed;
       top: 10px; left: 10px;
       background: rgba(0,0,0,0.5);
-      color: white; padding: 8px;
-      font-size: 1rem; border-radius: 4px;
+      color: white; padding: 6px 12px;
+      border-radius: 4px; font-size: 14px;
       z-index: 10;
+      pointer-events: none;             /* ヒントもタップを邪魔しない */
     }
   </style>
 </head>
 <body>
-  <div id="hint">▶︎ Canvas をタップすると、「雨」「ピアノ」「子供」が順に再生</div>
+  <div id="hint">画面どこでもタップ → 雨／ピアノ／子供 を切り替え</div>
   <canvas id="bg"></canvas>
+
+  <!-- 背景動画は DOM で用意（非表示でもＯＫ） -->
+  <video id="vRain"  muted loop playsinline src="rain.mp4"  style="display:none"></video>
+  <video id="vPiano" muted loop playsinline src="piano.mp4" style="display:none"></video>
+  <video id="vKids"  muted loop playsinline src="kids.mp4"  style="display:none"></video>
 
   <!-- Howler.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
   <script>
   (function() {
+    // Canvas 準備
     const canvas = document.getElementById('bg');
     const ctx    = canvas.getContext('2d');
-
-    // Canvas を viewport, 3×viewport 高さに合わせる
     function resize() {
       canvas.width  = window.innerWidth;
       canvas.height = window.innerHeight;
     }
-    resize();
     window.addEventListener('resize', resize);
+    resize();
 
-    // 背景に使う３つの video 要素を準備
-    const videoSrcs = ['rain.mp4','piano.mp4','kids.mp4'];
-    const videos = videoSrcs.map(src => {
-      const v = document.createElement('video');
-      v.src       = src;
-      v.loop      = true;
-      v.muted     = true;
-      v.playsInline = true;
-      v.autoplay  = true;
-      v.play().catch(()=>{});  // 自動再生トライ
-      return v;
-    });
+    // 背景動画要素を取得＆自動再生
+    const videos = [
+      document.getElementById('vRain'),
+      document.getElementById('vPiano'),
+      document.getElementById('vKids')
+    ];
+    videos.forEach(v => v.play().catch(()=>{}));
 
-    // ループ描画
+    // 背景の描画ループ
     function draw() {
-      const H = window.innerHeight, W = window.innerWidth;
-      ctx.clearRect(0,0,W,H*3);
-      videos.forEach((v,i) => {
-        ctx.drawImage(v, 0, H*i, W, H);
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H*3);
+      videos.forEach((v, i) => {
+        ctx.drawImage(v, 0, i*H, W, H);
       });
       requestAnimationFrame(draw);
     }
     draw();
 
-    // Howler.js で音声トラックを用意
+    // Howler.js で音声トラックを定義
     const tracks = {
       rain:  new Howl({ src:['rain.mp3'],         loop:true, volume:0.7, html5:true }),
       piano: new Howl({ src:['piano.mp3'],        loop:true, volume:0.7, html5:true }),
       kids:  new Howl({ src:['kids_playing.mp3'], loop:true, volume:0.7, html5:true })
     };
 
-    // タップ位置でセクション判定＆トグル再生
-    canvas.addEventListener('pointerdown', e => {
-      // 事前に iOS での再生アンロックを兼ねる
-      Object.values(tracks).forEach(h => { if (!h.playing()) h.play(); });
+    // タップ検知は document 全体で
+    document.addEventListener('pointerdown', e => {
+      // ここで一度に全 track を play() して iOS をアンロック
+      Object.values(tracks).forEach(h => h.play());
 
-      const y = e.clientY + window.scrollY;
+      // タップ位置からセクションを判定
+      const y   = e.clientY + window.scrollY;
       const idx = Math.floor(y / window.innerHeight);
       const ids = ['rain','piano','kids'];
-      const id = ids[idx];
-      if (!id || !tracks[id]) return;
+      const id  = ids[idx];
+      if (!id) return;
 
       const h = tracks[id];
-      if (h.playing(id)) {
-        h.stop();
-      } else {
-        h.play();
-      }
+      if (h.playing()) h.stop();
+      else             h.play();
     });
   })();
   </script>
