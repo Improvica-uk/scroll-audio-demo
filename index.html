@@ -2,103 +2,86 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll Audio Demo (Pre-play + Gain Control)</title>
+  <title>Scroll-Triggered Audio (Fully In View)</title>
   <style>
     html, body { margin:0; padding:0; }
     #startStop {
-      position: fixed; top: 10px; left: 10px; z-index:100;
+      position: fixed; top:10px; left:10px; z-index:100;
       padding:8px 12px; font-size:16px;
     }
     section {
-      height:100vh; display:flex;
-      justify-content:center; align-items:center;
+      height:100vh;
+      display:flex; justify-content:center; align-items:center;
       font-size:2rem;
     }
-    section[data-track="rainAudio"]   { background:#e0f7fa; }
-    section[data-track="pianoAudio"]  { background:#ffe0b2; }
-    section[data-track="kidsAudio"]   { background:#c8e6c9; }
+    section[data-track="rainAudio"]  { background:#e0f7fa; }
+    section[data-track="pianoAudio"] { background:#ffe0b2; }
+    section[data-track="kidsAudio"]  { background:#c8e6c9; }
   </style>
 </head>
 <body>
   <button id="startStop">Start Audio</button>
 
-  <!-- Preload your files locally via file:// -->
-  <audio id="rainAudio" src="rain.mp3" loop preload="auto"></audio>
-  <audio id="pianoAudio" src="piano.mp3" loop preload="auto"></audio>
-  <audio id="kidsAudio"  src="kids_playing.mp3" loop preload="auto"></audio>
+  <audio id="rainAudio"  src="rain.mp3" preload="auto" loop></audio>
+  <audio id="pianoAudio" src="piano.mp3" preload="auto" loop></audio>
+  <audio id="kidsAudio"  src="kids_playing.mp3" preload="auto" loop></audio>
 
   <section data-track="rainAudio">Rain Sound</section>
   <section data-track="pianoAudio">Piano Sound</section>
   <section data-track="kidsAudio">Kids Playing</section>
 
   <script>
-  let audioCtx = null,
-      observer = null;
+    let audioCtx = null;
+    const tracks = {}; // { el, gain, started }
 
-  document.getElementById('startStop').addEventListener('click', () => {
-    const btn = document.getElementById('startStop');
+    document.getElementById('startStop').addEventListener('click', () => {
+      const btn = document.getElementById('startStop');
+      if (!audioCtx) {
+        // 1) Unlock AudioContext
+        audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+        btn.textContent = 'Stop Audio';
 
-    if (!audioCtx) {
-      // 1) AudioContext の生成＋AudioElementSource＋GainNode を準備
-      audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-      const tracks = {};
-      document.querySelectorAll('audio').forEach(el => {
-        const src  = audioCtx.createMediaElementSource(el);
-        const gain = audioCtx.createGain();
-        gain.gain.value = 0;            // 完全ミュートでスタート
-        src.connect(gain).connect(audioCtx.destination);
-        tracks[el.id] = { el, gain, started: false };
-        el.play();                      // ユーザークリックでアンロック
-      });
+        // 2) Wire up each <audio> through a GainNode, start them silent
+        document.querySelectorAll('audio').forEach(el => {
+          const src  = audioCtx.createMediaElementSource(el);
+          const gain = audioCtx.createGain();
+          gain.gain.value = 0;               // fully silent initially
+          src.connect(gain).connect(audioCtx.destination);
+          tracks[el.id] = { el, gain, started: false };
+          el.play();                         // user gesture unlock
+        });
 
-      // 2) 最初のスクロールで rainAudio をフェードイン＆Observer登録
-      const onFirstScroll = () => {
-        // rainAudio を鳴らす
-        const rain = tracks['rainAudio'];
-        if (!rain.started) {
-          rain.gain.gain.setTargetAtTime(0.5, audioCtx.currentTime, 0.1);
-          rain.started = true;
-        }
-        // piano、kids セクションを監視
-        observer = new IntersectionObserver(entries => {
+        // 3) Observe all sections, fire when fully visible (threshold:1.0)
+        const observer = new IntersectionObserver(entries => {
           entries.forEach(entry => {
-            if (entry.isIntersecting) {
+            if (entry.intersectionRatio === 1) {
               const id = entry.target.dataset.track;
               const t  = tracks[id];
               if (!t.started) {
+                // fade up to 0.5 over 0.1s
                 t.gain.gain.setTargetAtTime(0.5, audioCtx.currentTime, 0.1);
                 t.started = true;
               }
             }
           });
-        }, { threshold: 0 });
+        }, { threshold: 1.0 });
 
-        // rain 以外のセクションだけ observe
-        document.querySelectorAll('section[data-track]:not([data-track="rainAudio"])')
-                .forEach(sec => observer.observe(sec));
+        document.querySelectorAll('section').forEach(sec => {
+          observer.observe(sec);
+        });
 
-        // 一度だけ実行
-        window.removeEventListener('scroll', onFirstScroll);
-      };
-
-      window.addEventListener('scroll', onFirstScroll);
-      btn.textContent = 'Stop Audio';
-    }
-    else {
-      // 停止＆リセット
-      window.removeEventListener('scroll', onFirstScroll);
-      if (observer) observer.disconnect();
-      document.querySelectorAll('audio').forEach(el => {
-        el.pause();
-        el.currentTime = 0;
-      });
-      audioCtx.close();
-      audioCtx = null;
-      observer = null;
-      btn.textContent = 'Start Audio';
-    }
-  });
-</script>
-
+      } else {
+        // Stop and reset everything
+        Object.values(tracks).forEach(t => {
+          t.el.pause();
+          t.el.currentTime = 0;
+          t.gain.disconnect();
+        });
+        audioCtx.close();
+        audioCtx = null;
+        btn.textContent = 'Start Audio';
+      }
+    });
+  </script>
 </body>
 </html>
