@@ -2,14 +2,17 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Scroll-Triggered Audio (Fully iOS-Compatible)</title>
+  <title>Section-Button Audio Demo</title>
   <style>
     html, body { margin:0; padding:0; }
-    #start { position: fixed; top:10px; left:10px; z-index:100; padding:8px; }
     section {
       height:100vh;
-      display:flex; justify-content:center; align-items:center;
-      font-size:2rem;
+      display:flex; flex-direction:column;
+      justify-content:center; align-items:center;
+      font-size:2rem; position:relative;
+    }
+    button.play {
+      margin-top:1em; padding:0.5em 1em; font-size:1rem;
     }
     section[data-id="rain"]  { background:#e0f7fa; }
     section[data-id="piano"] { background:#ffe0b2; }
@@ -17,80 +20,45 @@
   </style>
 </head>
 <body>
-  <button id="start">Start Audio</button>
+  <!-- Howler.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
 
-  <section data-id="rain">Rain</section>
-  <section data-id="piano">Piano</section>
-  <section data-id="kids">Kids Playing</section>
+  <section data-id="rain">
+    Rain Sound
+    <button class="play" data-id="rain">Play Rain</button>
+  </section>
+  <section data-id="piano">
+    Piano Sound
+    <button class="play" data-id="piano">Play Piano</button>
+  </section>
+  <section data-id="kids">
+    Kids Playing
+    <button class="play" data-id="kids">Play Kids</button>
+  </section>
 
   <script>
-  (async function(){
-    // 1) PRELOAD & DECODE outside any click
-    const files = {
-      rain:  'rain.mp3',
-      piano: 'piano.mp3',
-      kids:  'kids_playing.mp3'
+    // Howler.js でトラックを事前定義
+    const tracks = {
+      rain:  new Howl({ src:['rain.mp3'], loop:true, volume:0.7, html5:true }),
+      piano: new Howl({ src:['piano.mp3'], loop:true, volume:0.7, html5:true }),
+      kids:  new Howl({ src:['kids_playing.mp3'], loop:true, volume:0.7, html5:true })
     };
-    const audioBuffers = {};
-    await Promise.all(Object.entries(files).map(async ([key,url])=>{
-      const resp = await fetch(url);
-      const arrayBuffer = await resp.arrayBuffer();
-      // decode via OfflineAudioContext so it's off the main thread
-      const off = new OfflineAudioContext(1, 2, 44100);
-      audioBuffers[key] = await off.decodeAudioData(arrayBuffer);
-    }));
 
-    // helper to detect full-visibility
-    function fullyVisible(el){
-      const r = el.getBoundingClientRect();
-      return r.top >= 0 && r.bottom <= window.innerHeight;
-    }
+    // 各ボタンにクリックハンドラをアタッチ
+    document.querySelectorAll('button.play').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const h  = tracks[id];
 
-    // scroll handler
-    let gainNodes, started;
-    function onScroll(){
-      document.querySelectorAll('section').forEach(sec=>{
-        const id = sec.dataset.id;
-        if (!started[id] && fullyVisible(sec)){
-          gainNodes[id].gain.linearRampToValueAtTime(1, audioCtx.currentTime + 0.1);
-          started[id] = true;
+        if (!h.playing()) {
+          h.play();            // 再生
+          btn.textContent = 'Stop';
+        } else {
+          h.stop();            // 停止
+          btn.textContent = 'Play ' + id.charAt(0).toUpperCase() + id.slice(1);
         }
       });
-    }
-
-    let audioCtx;
-    document.getElementById('start').addEventListener('click', function(){
-      if (!audioCtx) {
-        // 2) INSIDE the click: create AudioContext & start all sources at once
-        audioCtx   = new AudioContext();
-        gainNodes  = {};
-        started    = { rain:false, piano:false, kids:false };
-
-        for (const id in audioBuffers){
-          const src  = audioCtx.createBufferSource();
-          const gain = audioCtx.createGain();
-          src.buffer = audioBuffers[id];
-          src.loop   = true;
-          gain.gain.value = 0;                  // start muted
-          src.connect(gain).connect(audioCtx.destination);
-          src.start(0);                         // MUST be direct in click
-          gainNodes[id] = gain;
-        }
-
-        // 3) listen to scroll
-        window.addEventListener('scroll', onScroll, { passive:true });
-        onScroll();  // in case section1 is already fully visible
-        this.textContent = 'Stop Audio';
-      } else {
-        // STOP & CLEAN UP
-        window.removeEventListener('scroll', onScroll);
-        Object.values(gainNodes).forEach(g=>g.gain.cancelScheduledValues(audioCtx.currentTime));
-        audioCtx.close();
-        audioCtx = null;
-        this.textContent = 'Start Audio';
-      }
     });
-  })();
   </script>
 </body>
 </html>
